@@ -1,335 +1,289 @@
 import pygame
 import random
-import time
-import copy
 
+pygame.mixer.pre_init()
+pygame.mixer.init()
 pygame.init()
 
-display = pygame.display.set_mode((800, 800))
-pygame.display.set_caption('Russian chess')
+
+class Display:
+    display_width = 800
+    display_height = 600
 
 
-class FigureType:
-    empty = 0
-    white_pawn = 1
-    white_king = 2
-    black_pawn = 3
-    black_king = 4
+class Cactus:
+    cactus_height = 70
+    cactus_size = [(69, 449), (37, 410), (40, 420)]
+
+    @staticmethod
+    def create_cactus_arr():
+        array = []
+        for i in 20, 300, 600:
+            choice = random.randrange(0, 3)
+            img = Image.cactus_img[choice]
+            width, height = Cactus.cactus_size[choice]
+            array.append(Object(Display.display_width + i, height, width, img, 4))
+        return array
 
 
 class Player:
-    is_players_move = True
-    factor = 0
-    final_score = 0
-    best_score = 0
+    def __init__(self):
+        self.health = 3
+        self.make_jump = False
+        self.jump_counter = 30
+        self.max_above = 0
+        self.above_cactus = False
+        self.run_count = 0
+        self.img_counter = 0
+
+    def draw_dino(self):
+        if self.img_counter == 25:
+            self.img_counter = 0
+
+        display.blit(Image.dino_img[self.img_counter // 5], (Player.player_x, Player.player_y))
+        self.img_counter += 1
+
+    def check_health(self):
+        self.health -= 1
+        if self.health == 0:
+            pygame.mixer_music.stop()
+            pygame.mixer.Sound.play(Musician.game_over_sound)
+            return False
+        else:
+            return True
+
+    def show_health(self):
+        show = 0
+        x = 20
+        while show != self.health:
+            display.blit(Image.health_img, (x, 20))
+            x += 40
+            show += 1
+
+    def check_collision(self, barriers):
+        def check_res(player, barrier, barriers):
+            if player.check_health:
+                radius = find_radius(barriers)
+                barrier.set_to_object(radius)
+                return False
+            return True
+
+        for barrier in barriers:
+            if barrier.y == 449:  # it is a little cactus
+                if not self.make_jump:
+                    if barrier.x <= Player.player_x + Player.player_width - 35 <= barrier.x + barrier.width:
+                        if self.check_health:
+                            return check_res(self, barrier, barriers)
+
+                elif self.jump_counter >= 0:
+                    if Player.player_y + Player.player_heigth - 5 >= barrier.y:
+                        if barrier.x <= Player.player_x + Player.player_width - 40 <= barrier.x + barrier.width:
+                            return check_res(self, barrier, barriers)
+
+                else:
+                    if Player.player_y + Player.player_heigth - 10 >= barrier.y:
+                        if barrier.x <= Player.player_x <= barrier.x + barrier.width:
+                            return check_res(self, barrier, barriers)
+
+            else:
+                if not self.make_jump:
+                    if barrier.x <= Player.player_x + Player.player_width - 5 <= barrier.x + barrier.width:
+                        return check_res(self, barrier, barriers)
+
+                    elif self.jump_counter == 10:
+                        if Player.player_y + Player.player_heigth - 5 >= barrier.y:
+                            if barrier.x <= Player.player_x + Player.player_width - 5 <= barrier.x + barrier.width:
+                                return check_res(self, barrier, barriers)
+
+                    elif self.jump_counter >= -1:
+                        if Player.player_y + Player.player_heigth - 5 >= barrier.y:
+                            if barrier.x <= Player.player_x + Player.player_width - 35 <= barrier.x + barrier.width:
+                                return check_res(self, barrier, barriers)
+
+                        else:
+                            if Player.player_y + Player.player_heigth - 10 >= barrier.y:
+                                if barrier.x <= Player.player_x + 5 <= barrier.x + barrier.width:
+                                    return check_res(self, barrier, barriers)
+        return False
+
+    player_width = 60
+    player_heigth = 100
+    player_x = Display.display_width // 3
+    player_y = Display.display_height - player_heigth - 100
+    clock = pygame.time.Clock()
+
+    def jump(self):
+        if self.jump_counter >= -30:
+            if self.jump_counter == 30:
+                pygame.mixer.Sound.play(Musician.jump_sound)
+
+            Player.player_y -= self.jump_counter / 2.5
+            self.jump_counter -= 1
+        else:
+            self.jump_counter = 30
+            self.make_jump = False
 
 
-class Move:
-    from_x = 0
-    from_y = 0
-    to_x = 0
-    to_y = 0
-    available_moves = []
+class Musician:
+    background_sound = pygame.mixer.Sound('textures/background.wav')
+    jump_sound = pygame.mixer.Sound('textures/jump.wav')
+    game_over_sound = pygame.mixer.Sound('textures/game_over.wav')
+    heart_plus_sound = pygame.mixer.Sound('textures/score.wav')
+    magic_sound = pygame.mixer.Sound('textures/magic.wav')
+    button_sound = pygame.mixer.Sound('textures/button.wav')
+
+    jump_sound.set_volume(0.15)
+    game_over_sound.set_volume(0.2)
+
+    @staticmethod
+    def load_backgroung_song(name):
+        pygame.mixer_music.load('textures/{}.wav'.format(name))
+        pygame.mixer_music.set_volume(0.3)
+
+
+class Button:
+    def __init__(self, width, height, x, y, message, font_size):
+        self.width = width
+        self.height = height
+        self.inactive_color = (13, 162, 50)
+        self.active_color = (23, 204, 50)
+        self.x = x
+        self.message = message
+        self.font_size = font_size
+        self.y = y
+
+    def draw(self, action=None):
+        mouse = pygame.mouse.get_pos()
+        click = pygame.mouse.get_pressed()
+
+        if self.x < mouse[0] < self.x + self.width and self.y < mouse[1] < self.y + self.height:
+            pygame.draw.rect(display, self.active_color, (self.x, self.y, self.width, self.height))
+
+            if click[0] == 1:
+                pygame.mixer.Sound.play(Musician.button_sound)
+                pygame.time.delay(300)
+                if action is not None:
+                    if action == quit:
+                        pygame.quit()
+                        quit()
+                    else:
+                        action()
+        else:
+            pygame.draw.rect(display, self.inactive_color, (self.x, self.y, self.width, self.height))
+
+        print_text(message=self.message, x=self.x + 25, y=self.y - 5, font_size=self.font_size)
+
+
+class Object:
+    def __init__(self, x, y, width, image, speed):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.image = image
+        self.speed = speed
+
+    def move(self):
+        if self.x >= -self.width:
+            self.x -= self.speed
+            return True
+        else:
+            return False
+
+    def return_self(self, radius, y, width, image):
+        self.x = radius
+        self.y = y
+        self.width = width
+        self.image = image
+        display.blit(self.image, (self.x, self.y))
+
+    def set_to_object(self, radius):
+        choice = random.randrange(0, 3)
+        img = Image.cactus_img[choice]
+        width, height = Cactus.cactus_size[choice]
+        self.return_self(radius, height, width, img)
+
+    @staticmethod
+    def open_random_object():
+        choice = random.randrange(0, 2)
+        img_of_stone = Image.stone_img[choice]
+
+        choice = random.randrange(0, 2)
+        img_of_cloud = Image.cloud_img[choice]
+
+        stone = Object(Display.display_width, Display.display_height - 80, 10, img_of_stone, 4)
+        cloud = Object(Display.display_width, 80, 70, img_of_cloud, 2)
+
+        return stone, cloud
+
+
+class Health(Object):
+    def __init__(self, x, y, width, image, speed):
+        super().__init__(x, y, width, image, speed)
+        self.hearts = 0
 
 
 class Image:
-    black_pawn_image = pygame.image.load('../images/black_pawn.gif')
-    white_pawn_image = pygame.image.load('../images/white_pawn.gif')
-    white_king_image = pygame.image.load('../images/white_king.gif')
-    black_king_image = pygame.image.load('../images/black_king.gif')
+    stone_img = [pygame.image.load("textures/Objects/Stone{}.png".format(i)) for i in range(2)]
+    cloud_img = [pygame.image.load("textures/Objects/Cloud{}.png".format(i)) for i in range(2)]
+    cactus_img = [pygame.image.load("textures/Objects/Cactus{}.png".format(i)) for i in range(3)]
+    health_img = pygame.image.load('textures/Effects/heart.png')
+    background_img = pygame.image.load('textures/Backgrounds/bg (1).png')
+    land_img = pygame.image.load('textures/Backgrounds/Land.jpg')
+
+    dino_img = [pygame.image.load('textures/Dino/Dino{}.png'.format(i)) for i in range(5)]
+    health_img = pygame.transform.scale(health_img, (30, 30))
 
 
-class Board:
-    @staticmethod
-    def create_initial_board():
-        board = []
-        for i in range(3):
-            board.append([])
-            for j in range(8):
-                if (i + j) % 2 == 0:
-                    board[i].append(FigureType.empty)
-                else:
-                    board[i].append(FigureType.black_pawn)
-
-        for i in range(3, 5):
-            board.append([])
-            for j in range(8):
-                board[i].append(FigureType.empty)
-
-        for i in range(5, 8):
-            board.append([])
-            for j in range(8):
-                if (i + j) % 2 == 0:
-                    board[i].append(FigureType.empty)
-                else:
-                    board[i].append(FigureType.white_pawn)
-        return board
-
-    board = []
+class Scores:
+    scores = 0
+    max_scores = 0
 
 
-def computers_move(board_size, square_size, offsets, max_recursion_depth):
-    find_correct_computers_moves(1, (), [], board_size, square_size, offsets, max_recursion_depth)
-    if Move.available_moves:
-        kh = len(Move.available_moves)
-        th = random.randint(0, kh - 1)
-        dh = len(Move.available_moves[th])
-
-        for i in range(dh - 1):
-            make_move(1, Move.available_moves[th][i][0], Move.available_moves[th][i][1], Move.available_moves[th][1 + i][0],
-                      Move.available_moves[th][1 + i][1], board_size, square_size, offsets)
-        Move.available_moves = []
-        Player.is_players_move = True
-
-    computers_figures_count, players_figures_count = count_of_remaining_figures(board_size)
-    if not players_figures_count or not computers_figures_count or \
-        (Player.is_players_move and not find_available_players_moves_all_over_board(board_size, offsets)) or \
-            Player.is_players_move and not computers_move_list(board_size, offsets):
-        run_game()
-    pygame.display.update()
+def start_game():
+    player = Player()
+    Musician.load_backgroung_song("background")
+    while game_cycle(player):
+        Scores.scores = 0
+        player.make_jump = False
+        player.jump_counter = 30
+        Player.clock = pygame.time.Clock()
+        player.health = 2
+        player.run_count = 1
 
 
-def computers_move_list(board_size, offsets):
-    available = find_available_computers_move_all_over_board([], board_size, offsets)
-    if not available:
-        available = check_computers_free_moves([], board_size, offsets)
-    return available
+def show_menu():
+    background = Image.background_img
+
+    start_button = Button(270, 70, 270, 200, 'start game', 60)
+    quit_button = Button(270, 70, 270, 300, '        exit', 50)
+
+    show = True
+    while show:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+
+        display.blit(background, (0, 0))
+        start_button.draw(start_game)
+        quit_button.draw(quit)
+
+        pygame.display.update()
+        Player.clock.tick(60)
 
 
-def find_correct_computers_moves(curr_recursion_depth, n_available, available, board_size, square_size, offsets, max_recursion_depth):
-    if not available:
-        available = computers_move_list(board_size, offsets)
-
-    if available:
-        k_board = copy.deepcopy(Board.board)
-        for ((from_i, from_j), (to_i, to_j)) in available:
-            t_available = make_move(0, from_i, from_j, to_i, to_j, board_size, square_size, offsets)
-            if t_available:
-                find_correct_computers_moves(curr_recursion_depth, (n_available + ((from_i, from_j),)), t_available, board_size, square_size, offsets, max_recursion_depth)
-            else:
-                check_players_move(curr_recursion_depth, [], board_size, square_size, offsets, max_recursion_depth)
-                if curr_recursion_depth == 1:
-                    curr_res = Player.final_score / Player.factor
-                    if not Move.available_moves:
-                        Move.available_moves = (n_available + ((from_i, from_j), (to_i, to_j)),)
-                        Player.best_score = curr_res
-                    else:
-                        if curr_res == Player.best_score:
-                            Move.available_moves += (n_available + ((from_i, from_j), (to_i, to_j)),)
-                        if curr_res > Player.best_score:
-                            Move.available_moves = ()
-                            Move.available_moves = (n_available + ((from_i, from_j), (to_i, to_j)),)
-                            Player.best_score = curr_res
-                    Player.final_score = 0
-                    Player.factor = 0
-
-            Board.board = copy.deepcopy(k_board)
-    else:
-        computers_figures_count, players_figures_count = count_of_remaining_figures(board_size)
-        Player.final_score += computers_figures_count - players_figures_count
-        Player.factor += 1
-
-
-def find_available_players_moves_all_over_board(board_size, offsets):
-    available = find_correct_players_moves([], board_size, offsets)
-    if not available:
-        available = check_players_free_moves([], board_size, offsets)
-    return available
-
-
-def check_players_move(curr_recursion_depth, available, board_size, square_size, offsets, max_recursion_depth):
-    if not available:
-        available = find_available_players_moves_all_over_board(board_size, offsets)
-
-    if available:
-        k_board = copy.deepcopy(Board.board)
-        for ((Move.from_x, Move.from_y), (Move.to_x, Move.to_y)) in available:
-            t_available = make_move(0, Move.from_x, Move.from_y, Move.to_x, Move.to_y, board_size, square_size, offsets)
-            if t_available:
-                check_players_move(curr_recursion_depth, t_available, board_size, square_size, offsets, max_recursion_depth)
-            else:
-                if curr_recursion_depth < max_recursion_depth:
-                    find_correct_computers_moves(curr_recursion_depth + 1, (), [], board_size, square_size, offsets, max_recursion_depth)
-                else:
-                    computers_figures_count, players_figures_count = count_of_remaining_figures(board_size)
-                    Player.final_score += computers_figures_count - players_figures_count
-                    Player.factor += 1
-
-            Board.board = copy.deepcopy(k_board)
-    else:
-        computers_figures_count, players_figures_count = count_of_remaining_figures(board_size)
-        Player.final_score += computers_figures_count - players_figures_count
-        Player.factor += 1
-
-
-def count_of_remaining_figures(board_size):
-    computers_figures_count = 0
-    players_figures_count = 0
-
-    for i in range(board_size):
-        for j in range(board_size):
-            if Board.board[j][i] == FigureType.white_pawn:
-                players_figures_count += 1
-            elif Board.board[j][i] == FigureType.white_king:
-                players_figures_count += 2
-            elif Board.board[j][i] == FigureType.black_pawn:
-                computers_figures_count += 1
-            elif Board.board[j][i] == FigureType.black_king:
-                computers_figures_count += 3
-    return computers_figures_count, players_figures_count
-
-
-def players_move(board_size, square_size, offsets):
-    Player.is_players_move = False
-    available = find_available_players_moves_all_over_board(board_size, offsets)
-    if available:
-        if ((Move.from_x, Move.from_y), (Move.to_x, Move.to_y)) in available:
-            t_available = make_move(1, Move.from_x, Move.from_y, Move.to_x, Move.to_y, board_size, square_size, offsets)
-            if t_available:
-                Player.is_players_move = True
-        else:
-            Player.is_players_move = True
-    draw_surface(Board.board, board_size, square_size)
-
-
-def make_move(need_to_draw, from_x, from_y, to_x, to_y, board_size, square_size, offsets):
-    if need_to_draw:
-        draw_surface(Board.board, board_size, square_size)
-
-    if to_y == 0 and Board.board[from_y][from_x] == FigureType.white_pawn:
-        Board.board[from_y][from_x] = FigureType.white_king
-
-    if to_y == board_size - 1 and Board.board[from_y][from_x] == FigureType.black_pawn:
-        Board.board[from_y][from_x] = FigureType.black_king
-
-    Board.board[to_y][to_x] = Board.board[from_y][from_x]
-    Board.board[from_y][from_x] = 0
-
-    offset_x = offset_y = 1
-    if from_x < to_x:
-        offset_x = -1
-    if from_y < to_y:
-        offset_y = -1
-    x_poz, y_poz = to_x, to_y
-    while (from_x != x_poz) or (from_y != y_poz):
-        x_poz += offset_x
-        y_poz += offset_y
-        if Board.board[y_poz][x_poz] != 0:
-            Board.board[y_poz][x_poz] = 0
-            if need_to_draw:
-                draw_surface(Board.board, board_size, square_size)
-            if Board.board[to_y][to_x] == FigureType.black_pawn or Board.board[to_y][to_x] == FigureType.black_king:
-                return find_available_computers_moves_sterting_from_this_cell([], to_x, to_y, board_size, offsets)
-            elif Board.board[to_y][to_x] == FigureType.white_pawn or Board.board[to_y][to_x] == FigureType.white_king:
-                return find_correct_players_movesp([], to_x, to_y, board_size, offsets)
-    if need_to_draw:
-        draw_surface(Board.board, board_size, square_size)
-
-
-def find_available_computers_move_all_over_board(available, board_size, offsets):
-    for y in range(board_size):
-        for x in range(board_size):
-            available = find_available_computers_moves_sterting_from_this_cell(available, x, y, board_size, offsets)
-    return available
-
-
-def check_kings_moves(available, x, y, board_size, offsets):
-    for ix, iy in offsets:
-        osh = 0
-        for i in range(1, board_size):
-            if 0 <= y + iy * i < board_size and 0 <= x + ix * i < board_size:
-                if osh == 1:
-                    available.append(((x, y), (x + ix * i, y + iy * i)))
-                if Board.board[y + iy * i][x + ix * i] == FigureType.white_pawn or \
-                        Board.board[y + iy * i][x + ix * i] == FigureType.white_king:
-                    osh += 1
-                if Board.board[y + iy * i][x + ix * i] == FigureType.black_pawn or \
-                        Board.board[y + iy * i][x + ix * i] == FigureType.black_king or osh == 2:
-                    if osh > 0: available.pop()
-                    break
-    return available
-
-
-def find_available_computers_moves_sterting_from_this_cell(available, x, y, board_size, offsets):
-    if Board.board[y][x] == FigureType.black_pawn:
-        for ix, iy in offsets:
-            if 0 <= y + iy + iy < board_size and 0 <= x + ix + ix < board_size:
-                if Board.board[y + iy][x + ix] == FigureType.white_pawn or \
-                        Board.board[y + iy][x + ix] == FigureType.white_king:
-                    if Board.board[y + iy + iy][x + ix + ix] == 0:
-                        available.append(((x, y), (x + ix + ix, y + iy + iy)))
-    elif Board.board[y][x] == FigureType.black_king:
-        available = check_kings_moves(available, x, y, board_size, offsets)
-    return available
-
-
-def check_computers_free_moves(available, board_size, offsets):
-    for y in range(board_size):
-        for x in range(board_size):
-            if Board.board[y][x] == FigureType.black_pawn:
-                for ix, iy in (-1, 1), (1, 1):
-                    if 0 <= y + iy < board_size and 0 <= x + ix < board_size:
-                        if Board.board[y + iy][x + ix] == FigureType.empty:
-                            available.append(((x, y), (x + ix, y + iy)))
-                        if Board.board[y + iy][x + ix] == FigureType.white_pawn or \
-                                Board.board[y + iy][x + ix] == FigureType.white_king:
-                            if 0 <= y + iy * 2 < board_size and 0 <= x + ix * 2 < board_size:
-                                if Board.board[y + iy * 2][x + ix * 2] == FigureType.empty:
-                                    available.append(((x, y), (x + ix * 2, y + iy * 2)))
-            if Board.board[y][x] == FigureType.black_king:
-                available = check_kings_moves(available, x, y, board_size, offsets)
-    return available
-
-
-def find_correct_players_moves(available, board_size, offsets):
-    available = []
-    for y in range(board_size):
-        for x in range(board_size):
-            available = find_correct_players_movesp(available, x, y, board_size, offsets)
-    return available
-
-
-def find_correct_players_movesp(available, x, y, board_size, offsets):
-    if Board.board[y][x] == FigureType.white_pawn:
-        for ix, iy in offsets:
-            if 0 <= y + iy + iy < board_size and 0 <= x + ix + ix < board_size:
-                if Board.board[y + iy][x + ix] == FigureType.black_pawn or \
-                        Board.board[y + iy][x + ix] == FigureType.black_king:
-                    if Board.board[y + iy + iy][x + ix + ix] == 0:
-                        available.append(((x, y), (x + ix + ix, y + iy + iy)))
-    if Board.board[y][x] == FigureType.white_king:
-        available = check_kings_moves(available, x, y, board_size, offsets)
-    return available
-
-
-def check_players_free_moves(available, board_size, offsets):
-    for y in range(board_size):
-        for x in range(board_size):
-            if Board.board[y][x] == FigureType.white_pawn:
-                for ix, iy in (-1, -1), (1, -1):
-                    if 0 <= y + iy < board_size and 0 <= x + ix < board_size:
-                        if Board.board[y + iy][x + ix] == 0:
-                            available.append(((x, y), (x + ix, y + iy)))
-                        if Board.board[y + iy][x + ix] == FigureType.black_pawn or \
-                                Board.board[y + iy][x + ix] == FigureType.black_king:
-                            if 0 <= y + iy * 2 < board_size and 0 <= x + ix * 2 < board_size:
-                                if Board.board[y + iy * 2][x + ix * 2] == 0:
-                                    available.append(((x, y), (x + ix * 2, y + iy * 2)))
-            if Board.board[y][x] == FigureType.white_king:
-                available = check_kings_moves(available, x, y, board_size, offsets)
-    return available
-
-
-def run_game():
+def game_cycle(player):
+    pygame.mixer_music.play(-1)
     game = True
-    max_recursion_depth = 3
-    offsets =[(-1, -1), (-1, 1), (1, -1), (1, 1)]
-    board_size = 8
-    square_size = 100
-    Board.board = Board.create_initial_board()
-    draw_surface(Board.board, board_size, square_size)
-    unselected_square = -1
+    cactus_arr = Cactus.create_cactus_arr()
+    land = Image.land_img
 
+    stone, cloud = Object.open_random_object()
+    heart = Health(Display.display_width, 280, 30, Image.health_img, 4)
+
+    if player.run_count != 0:
+        pygame.mixer.Sound.play(Musician.magic_sound)
+    player.run_count += 1
 
     while game:
         for event in pygame.event.get():
@@ -337,42 +291,166 @@ def run_game():
                 pygame.quit()
                 quit()
 
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                x, y = event.pos[0] // square_size, event.pos[1] // square_size
-                curr_square = (x, y)
-                curr_figure = Board.board[curr_square[1]][curr_square[0]]
-                if curr_figure == 1 or curr_figure == 2:
-                    Move.from_x, Move.from_y = x, y
-                else:
-                    if Move.from_x != unselected_square:
-                        Move.to_x, Move.to_y = x, y
-                        if Player.is_players_move:
-                            players_move(board_size, square_size, offsets)
-                            if not Player.is_players_move:
-                                time.sleep(0.5)
-                                computers_move(board_size, square_size, offsets, max_recursion_depth)
-                        Move.from_x = unselected_square
-        draw_surface(Board.board, board_size, square_size)
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_SPACE]:
+            player.make_jump = True
+        if keys[pygame.K_ESCAPE]:
+            pause()
+
+        if player.make_jump:
+            player.jump()
+
+        count_scores(cactus_arr, player)
+
+        display.blit(land, (0, 0))
+        print_text('Scores: ' + str(Scores.scores), 600, 10)
+
+        draw_array(cactus_arr)
+        move_objects(stone, cloud)
+        player.draw_dino()
+
+        if player.check_collision(cactus_arr):
+            game = False
+
+        heart.move()
+        display.blit(heart.image, (heart.x, heart.y))
+        hearts_plus(heart, player)
+        player.show_health()
+
         pygame.display.update()
-        time.sleep(0.5)
+        Player.clock.tick(60)
+
+    return game_over()
 
 
-def draw_surface(board, board_size, square_size):
-    display.fill((255, 255, 255))
-    for i in range(board_size):
-        for j in range(board_size):
-            if (i + j) % 2 == 1:
-                pygame.draw.rect(display, (0, 0, 0), (i * square_size, j * square_size, square_size, square_size))
-            if board[j][i] == FigureType.white_pawn:
-                display.blit(Image.white_pawn_image, (i * square_size, j * square_size))
-            elif board[j][i] == FigureType.white_king:
-                display.blit(Image.white_king_image, (i * square_size, j * square_size))
-            elif board[j][i] == FigureType.black_pawn:
-                display.blit(Image.black_pawn_image, (i * square_size, j * square_size))
-            elif board[j][i] == FigureType.black_king:
-                display.blit(Image.black_king_image, (i * square_size, j * square_size))
-    pygame.display.update()
+def find_radius(array):
+    maximum = max(array[0].x, array[1].x, array[2].x)
+    if maximum < Display.display_width:
+        radius = Display.display_width
+        if radius - maximum < 50:
+            radius += 150
+    else:
+        radius = maximum
+
+    choice = random.randrange(0, 5)
+    if choice == 0:
+        radius += random.randrange(10, 15)
+    else:
+        radius += random.randrange(200, 350)
+
+    return radius
 
 
-run_game()
+def draw_array(array):
+    for cactus in array:
+        check = cactus.move()
+        display.blit(cactus.image, (cactus.x, cactus.y))
+        if not check:
+            radius = find_radius(array)
+            cactus.set_to_object(radius)
+
+
+def move_objects(stone, cloud):
+    check = stone.move()
+    display.blit(stone.image, (stone.x, stone.y))
+    if not check:
+        choice = random.randrange(0, 2)
+        img_of_stone = Image.stone_img[choice]
+        stone.return_self(Display.display_width, 500 + random.randrange(10, 80), stone.width, img_of_stone)
+
+    check = cloud.move()
+    display.blit(cloud.image, (cloud.x, cloud.y))
+    if not check:
+        choice = random.randrange(0, 2)
+        img_of_cloud = Image.cloud_img[choice]
+        cloud.return_self(Display.display_width, random.randrange(10, 200), stone.width, img_of_cloud)
+
+
+def print_text(message, x, y, font_color=(0, 0, 0), font_type='textures/text_style.ttf', font_size=40):
+    font_type = pygame.font.Font(font_type, font_size)
+    text = font_type.render(message, True, font_color)
+    display.blit(text, (x, y))
+
+
+def pause():
+    paused = True
+
+    pygame.mixer_music.pause()
+    while paused:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+
+        print_text('Paused. Press Enter to continue', 200, 250)
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_RETURN]:
+            paused = False
+
+        pygame.display.update()
+        Player.clock.tick(15)
+
+    pygame.mixer_music.unpause()
+
+
+def count_scores(barriers, player):
+    above = 0
+
+    if -20 <= player.jump_counter < 25:
+        for barrier in barriers:
+            if Player.player_y + Player.player_heigth - 5 <= barrier.y:
+                if barrier.x <= Player.player_x <= barrier.x + barrier.width \
+                        or barrier.x <= Player.player_x + Player.player_width <= barrier.x + barrier.width:
+                    above += 1
+
+        player.max_above = max(player.max_above, above)
+    else:
+        if player.jump_counter == -30:
+            Scores.scores += player.max_above
+            max_above = 0
+
+
+def game_over():
+    if Scores.scores > Scores.max_scores:
+        Scores.max_scores = Scores.scores
+    stopped = True
+    while stopped:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+
+        print_text("Game over. Press Enter to play again. Press Esc to exit", 50, 200)
+        print_text('Max scores: ' + str(Scores.max_scores), 300, 300)
+
+        keys = pygame.key.get_pressed()
+
+        if keys[pygame.K_RETURN]:
+            return True
+
+        if keys[pygame.K_ESCAPE]:
+            return False
+
+        pygame.display.update()
+        Player.clock.tick(15)
+
+
+def hearts_plus(heart, player):
+    if Player.player_x <= heart.x <= Player.player_x + Player.player_width:
+        if Player.player_y <= heart.y <= Player.player_y + Player.player_heigth:
+            pygame.mixer.Sound.play(Musician.heart_plus_sound)
+            if player.health < 5:
+                player.health += 1
+
+            radius = Display.display_width + random.randrange(500, 1500)
+            heart.return_self(radius, heart.y, heart.width, heart.image)
+
+
+display = pygame.display.set_mode((Display.display_width, Display.display_height))
+pygame.display.set_caption('404 NotFound')
+
+show_menu()
+pygame.quit()
+quit()
 
